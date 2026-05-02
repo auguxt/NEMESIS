@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEMESIS — Attack Dashboard</title>
+    <style>
+        /* ── RESET & BASE ── */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: #0F2347;
+            color: #ECEFF1;
+            min-height: 100vh;
+        }
+
+        /* ── HEADER ── */
+        .header {
+            background: #1B3A6B;
+            padding: 18px 30px;
+            border-bottom: 3px solid #C0392B;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 { font-size: 24px; color: #fff; letter-spacing: 2px; }
+        .header .subtitle { font-size: 11px; color: #90A4AE; margin-top: 3px; }
+        .live-badge {
+            background: #C0392B;
+            color: white;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.5; }
+        }
+
+        /* ── STATS ROW ── */
+        .stats {
+            display: flex;
+            gap: 16px;
+            padding: 20px 30px;
+        }
+        .stat-card {
+            flex: 1;
+            padding: 18px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card .num {
+            font-size: 36px;
+            font-weight: bold;
+            color: #fff;
+        }
+        .stat-card .label {
+            font-size: 11px;
+            color: #90A4AE;
+            margin-top: 4px;
+        }
+        .card-blue   { background: #1B3A6B; border-top: 3px solid #1565C0; }
+        .card-red    { background: #4A1010; border-top: 3px solid #C0392B; }
+        .card-green  { background: #0A3320; border-top: 3px solid #1E8449; }
+        .card-orange { background: #4A2500; border-top: 3px solid #E67E22; }
+
+        /* ── MAIN CONTENT ── */
+        .content { padding: 0 30px 30px; }
+
+        /* ── SECTION HEADERS ── */
+        .section-title {
+            background: #1B3A6B;
+            padding: 10px 16px;
+            border-left: 4px solid #C0392B;
+            margin-bottom: 12px;
+            margin-top: 24px;
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        /* ── TABLES ── */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #162B4D;
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 13px;
+        }
+        th {
+            background: #1B3A6B;
+            padding: 10px 14px;
+            text-align: left;
+            font-size: 11px;
+            color: #90A4AE;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        td { padding: 10px 14px; border-bottom: 1px solid #1B3A6B; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #1B3A6B; }
+
+        /* ── THREAT BADGES ── */
+        .badge {
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .badge-low      { background: #1E8449; color: #fff; }
+        .badge-medium   { background: #E67E22; color: #fff; }
+        .badge-high     { background: #C0392B; color: #fff; }
+        .badge-critical { background: #6C3483; color: #fff; }
+
+        /* ── SERVICE BADGES ── */
+        .svc {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .svc-SSH    { background: #1565C0; color: #fff; }
+        .svc-HTTP   { background: #00796B; color: #fff; }
+        .svc-FTP    { background: #EF6C00; color: #fff; }
+        .svc-Telnet { background: #6A1B9A; color: #fff; }
+
+        /* ── FOOTER ── */
+        .footer {
+            text-align: center;
+            padding: 16px;
+            color: #455A64;
+            font-size: 11px;
+            border-top: 1px solid #1B3A6B;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+    <div>
+        <h1>⚡ NEMESIS</h1>
+        <div class="subtitle">Network Entrapment &amp; Malicious Entity Surveillance Intelligence System</div>
+    </div>
+    <div class="live-badge">● LIVE</div>
+</div>
+
+<!-- STATS CARDS -->
+<div class="stats">
+    <div class="stat-card card-blue">
+        <div class="num">{{ total }}</div>
+        <div class="label">Total Attacks</div>
+    </div>
+    <div class="stat-card card-red">
+        <div class="num">{{ attackers | length }}</div>
+        <div class="label">Unique Attackers</div>
+    </div>
+    <div class="stat-card card-green">
+        <div class="num">{{ profiles | length }}</div>
+        <div class="label">Profiles Generated</div>
+    </div>
+    <div class="stat-card card-orange">
+        <div class="num">4</div>
+        <div class="label">Services Running</div>
+    </div>
+</div>
+
+<div class="content">
+
+    <!-- ATTACKER PROFILES -->
+    <div class="section-title">🧠 ATTACKER PROFILES</div>
+    {% if profiles %}
+    <table>
+        <thead>
+            <tr>
+                <th>IP Address</th>
+                <th>Category</th>
+                <th>Threat Level</th>
+                <th>Risk Score</th>
+                <th>Total Attacks</th>
+                <th>Services Hit</th>
+                <th>Speed</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in profiles %}
+            <tr>
+                <td><b>{{ p.ip }}</b></td>
+                <td>{{ p.category }}</td>
+                <td>
+                    {% if p.level == 'LOW' %}
+                        <span class="badge badge-low">LOW</span>
+                    {% elif p.level == 'MEDIUM' %}
+                        <span class="badge badge-medium">MEDIUM</span>
+                    {% elif p.level == 'HIGH' %}
+                        <span class="badge badge-high">HIGH</span>
+                    {% else %}
+                        <span class="badge badge-critical">CRITICAL</span>
+                    {% endif %}
+                </td>
+                <td><b style="color:#E67E22">{{ p.risk_score }} / 100</b></td>
+                <td>{{ p.total_attacks }}</td>
+                <td>{{ p.services_hit | join(', ') }}</td>
+                <td>{{ p.speed }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color:#546E7A; padding:20px; text-align:center;">
+        No attackers detected yet. Start honeypot.py and wait for connections.
+    </p>
+    {% endif %}
+
+    <!-- RECENT ATTACKS -->
+    <div class="section-title">⚡ RECENT ATTACKS (Latest 20)</div>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Timestamp</th>
+                <th>Service</th>
+                <th>IP Address</th>
+                <th>Data Received</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in attacks[:20] %}
+            <tr>
+                <td style="color:#546E7A">{{ row[0] }}</td>
+                <td style="color:#90A4AE">{{ row[1] }}</td>
+                <td>
+                    <span class="svc svc-{{ row[2] }}">{{ row[2] }}</span>
+                </td>
+                <td><b>{{ row[3] }}</b></td>
+                <td style="color:#B0BEC5">
+                    {{ row[4][:60] if row[4] else 'connection attempt' }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+</div>
+
+<div class="footer">
+    NEMESIS Honeypot System | B.E. CSE Cybersecurity Final Year Project
+    | Refresh this page to see latest attacks
+</div>
+
+</body>
+</html>
+
