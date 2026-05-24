@@ -6,6 +6,7 @@ from datetime import datetime
 # CREATE DATABASE AND ALL TABLES
 # ─────────────────────────────────────────
 def init_db():
+    """Initialize database with all tables"""
     conn = sqlite3.connect("honeytrap.db")
     cursor = conn.cursor()
 
@@ -40,6 +41,7 @@ def init_db():
 # SAVE ONE ATTACK
 # ─────────────────────────────────────────
 def save_attack(service, ip, data):
+    """Save attack to database and return the data"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn = sqlite3.connect("honeytrap.db")
     cursor = conn.cursor()
@@ -72,15 +74,20 @@ def save_attack(service, ip, data):
     conn.commit()
     conn.close()
 
+    # Return attack data for SocketIO emit
     return {
-	'timestamp':  timestamp,
-	'service':    service,
-	'ip':	      ip,
-	'data':       data[:60] if data else 'connection attempt'
+        'timestamp': timestamp,
+        'service':   service,
+        'ip':        ip,
+        'data':      data[:60] if data else 'connection attempt'
+    }
+
+
 # ─────────────────────────────────────────
 # READ — ALL ATTACKS
 # ─────────────────────────────────────────
 def get_all_attacks():
+    """Get all attacks ordered by newest first"""
     conn = sqlite3.connect("honeytrap.db")
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM attacks ORDER BY id DESC")
@@ -93,6 +100,7 @@ def get_all_attacks():
 # READ — ALL ATTACKERS
 # ─────────────────────────────────────────
 def get_all_attackers():
+    """Get all attackers ordered by attack count"""
     conn = sqlite3.connect("honeytrap.db")
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM attackers ORDER BY total_attacks DESC")
@@ -105,6 +113,7 @@ def get_all_attackers():
 # READ — ATTACKS BY ONE IP
 # ─────────────────────────────────────────
 def get_attacks_by_ip(ip):
+    """Get all attacks from specific IP"""
     conn = sqlite3.connect("honeytrap.db")
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM attacks WHERE ip = ? ORDER BY id DESC", (ip,))
@@ -114,21 +123,10 @@ def get_attacks_by_ip(ip):
 
 
 # ─────────────────────────────────────────
-# READ — ATTACKS BY SERVICE
-# ─────────────────────────────────────────
-def get_attacks_by_service(service):
-    conn = sqlite3.connect("honeytrap.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM attacks WHERE service = ? ORDER BY id DESC", (service,))
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
-
-
-# ─────────────────────────────────────────
 # READ — TOTAL COUNT
 # ─────────────────────────────────────────
 def get_total_count():
+    """Get total number of attacks"""
     conn = sqlite3.connect("honeytrap.db")
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM attacks")

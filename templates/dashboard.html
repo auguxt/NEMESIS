@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NEMESIS — Attack Dashboard</title>
+    <title>NEMESIS — Honeypot Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
         /* ── RESET & BASE ── */
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Arial', sans-serif;
             background: #0F2347;
             color: #ECEFF1;
             min-height: 100vh;
@@ -17,69 +19,164 @@
         /* ── HEADER ── */
         .header {
             background: #1B3A6B;
-            padding: 18px 30px;
-            border-bottom: 3px solid #C0392B;
+            padding: 20px 30px;
+            border-bottom: 4px solid #C0392B;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
         }
-        .header h1 { font-size: 24px; color: #fff; letter-spacing: 2px; }
-        .header .subtitle { font-size: 11px; color: #90A4AE; margin-top: 3px; }
+        
+        .header h1 {
+            font-size: 28px;
+            color: #fff;
+            letter-spacing: 3px;
+            font-weight: bold;
+        }
+        
+        .header .subtitle {
+            font-size: 11px;
+            color: #90A4AE;
+            margin-top: 4px;
+        }
+        
         .live-badge {
             background: #C0392B;
             color: white;
-            padding: 5px 14px;
+            padding: 6px 16px;
             border-radius: 20px;
             font-size: 12px;
             font-weight: bold;
             animation: pulse 2s infinite;
         }
+        
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50%       { opacity: 0.5; }
+            50% { opacity: 0.6; }
         }
 
-        /* ── STATS ROW ── */
+        /* ── ALERT POPUP ── */
+        .alert-popup {
+            display: none;
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #C0392B;
+            color: white;
+            padding: 18px 22px;
+            border-radius: 8px;
+            border-left: 5px solid #FF6B6B;
+            font-size: 13px;
+            z-index: 9999;
+            max-width: 340px;
+            box-shadow: 0 6px 25px rgba(0,0,0,0.6);
+            animation: slideIn 0.4s ease;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(120%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .alert-popup .alert-title {
+            font-weight: bold;
+            font-size: 15px;
+            margin-bottom: 8px;
+        }
+        
+        .alert-popup .alert-detail {
+            color: #FFCDD2;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        /* ── STATS ── */
         .stats {
             display: flex;
             gap: 16px;
-            padding: 20px 30px;
+            padding: 24px 30px;
         }
+        
         .stat-card {
             flex: 1;
-            padding: 18px;
-            border-radius: 8px;
+            padding: 20px;
+            border-radius: 10px;
             text-align: center;
+            transition: transform 0.2s;
         }
+        
+        .stat-card:hover {
+            transform: translateY(-3px);
+        }
+        
         .stat-card .num {
-            font-size: 36px;
+            font-size: 40px;
             font-weight: bold;
             color: #fff;
         }
+        
         .stat-card .label {
-            font-size: 11px;
+            font-size: 12px;
             color: #90A4AE;
-            margin-top: 4px;
-        }
-        .card-blue   { background: #1B3A6B; border-top: 3px solid #1565C0; }
-        .card-red    { background: #4A1010; border-top: 3px solid #C0392B; }
-        .card-green  { background: #0A3320; border-top: 3px solid #1E8449; }
-        .card-orange { background: #4A2500; border-top: 3px solid #E67E22; }
-
-        /* ── MAIN CONTENT ── */
-        .content { padding: 0 30px 30px; }
-
-        /* ── SECTION HEADERS ── */
-        .section-title {
-            background: #1B3A6B;
-            padding: 10px 16px;
-            border-left: 4px solid #C0392B;
-            margin-bottom: 12px;
-            margin-top: 24px;
-            font-size: 14px;
-            font-weight: bold;
+            margin-top: 5px;
+            text-transform: uppercase;
             letter-spacing: 1px;
         }
+        
+        .c-blue   { background: #1B3A6B; border-top: 4px solid #1565C0; }
+        .c-red    { background: #4A1010; border-top: 4px solid #C0392B; }
+        .c-green  { background: #0A3320; border-top: 4px solid #1E8449; }
+        .c-orange { background: #4A2500; border-top: 4px solid #E67E22; }
+
+        /* ── MAIN CONTENT ── */
+        .content {
+            padding: 0 30px 30px;
+        }
+
+        /* ── SECTION TITLES ── */
+        .section-title {
+            background: #1B3A6B;
+            padding: 12px 16px;
+            border-left: 5px solid #C0392B;
+            margin: 28px 0 14px;
+            font-size: 15px;
+            font-weight: bold;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        /* ── LIVE LOG ── */
+        #live-log {
+            max-height: 250px;
+            overflow-y: auto;
+            background: #0A1628;
+            border: 1px solid #1B3A6B;
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-bottom: 24px;
+        }
+        
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid #1B3A6B;
+            color: #90A4AE;
+            line-height: 1.5;
+        }
+        
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+        
+        .log-time  { color: #546E7A; }
+        .log-svc   { font-weight: bold; padding: 2px 6px; border-radius: 3px; }
+        .log-ip    { color: #E67E22; font-weight: bold; }
+        
+        .log-svc-SSH    { background: #1565C0; color: #fff; }
+        .log-svc-HTTP   { background: #00796B; color: #fff; }
+        .log-svc-FTP    { background: #EF6C00; color: #fff; }
+        .log-svc-Telnet { background: #6A1B9A; color: #fff; }
 
         /* ── TABLES ── */
         table {
@@ -89,87 +186,141 @@
             border-radius: 8px;
             overflow: hidden;
             font-size: 13px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
+        
         th {
             background: #1B3A6B;
-            padding: 10px 14px;
+            padding: 12px 14px;
             text-align: left;
             font-size: 11px;
             color: #90A4AE;
             text-transform: uppercase;
             letter-spacing: 1px;
-        }
-        td { padding: 10px 14px; border-bottom: 1px solid #1B3A6B; }
-        tr:last-child td { border-bottom: none; }
-        tr:hover td { background: #1B3A6B; }
-
-        /* ── THREAT BADGES ── */
-        .badge {
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 11px;
             font-weight: bold;
         }
+        
+        td {
+            padding: 12px 14px;
+            border-bottom: 1px solid #1B3A6B;
+        }
+        
+        tr:last-child td {
+            border-bottom: none;
+        }
+        
+        tr:hover td {
+            background: #1B3A6B;
+        }
+
+        /* ── BADGES ── */
+        .badge {
+            padding: 4px 11px;
+            border-radius: 14px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
         .badge-low      { background: #1E8449; color: #fff; }
         .badge-medium   { background: #E67E22; color: #fff; }
         .badge-high     { background: #C0392B; color: #fff; }
         .badge-critical { background: #6C3483; color: #fff; }
 
-        /* ── SERVICE BADGES ── */
+        /* ── SERVICE TAGS ── */
         .svc {
-            padding: 2px 8px;
-            border-radius: 4px;
+            padding: 3px 9px;
+            border-radius: 5px;
             font-size: 11px;
             font-weight: bold;
+            text-transform: uppercase;
         }
-        .svc-SSH    { background: #1565C0; color: #fff; }
-        .svc-HTTP   { background: #00796B; color: #fff; }
-        .svc-FTP    { background: #EF6C00; color: #fff; }
-        .svc-Telnet { background: #6A1B9A; color: #fff; }
+        
+        .SSH    { background: #1565C0; color: #fff; }
+        .HTTP   { background: #00796B; color: #fff; }
+        .FTP    { background: #EF6C00; color: #fff; }
+        .Telnet { background: #6A1B9A; color: #fff; }
 
         /* ── FOOTER ── */
         .footer {
             text-align: center;
-            padding: 16px;
+            padding: 18px;
             color: #455A64;
             font-size: 11px;
             border-top: 1px solid #1B3A6B;
-            margin-top: 20px;
+            margin-top: 30px;
+            background: #0F2347;
+        }
+
+        /* ── SCROLLBAR ── */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #0A1628;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #1B3A6B;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #2B5A9B;
         }
     </style>
 </head>
 <body>
 
+<!-- ALERT POPUP (hidden by default) -->
+<div class="alert-popup" id="alertPopup">
+    <div class="alert-title">⚠ ATTACK DETECTED!</div>
+    <div class="alert-detail" id="alertDetail">...</div>
+</div>
+
 <!-- HEADER -->
 <div class="header">
     <div>
-        <h1>⚡ NEMESIS</h1>
-        <div class="subtitle">Network Entrapment &amp; Malicious Entity Surveillance Intelligence System</div>
+        <h1>🍯 NEMESIS</h1>
+        <div class="subtitle">
+            Network Entrapment &amp; Malicious Entity Surveillance
+            Intelligence System
+        </div>
     </div>
     <div class="live-badge">● LIVE</div>
 </div>
 
 <!-- STATS CARDS -->
 <div class="stats">
-    <div class="stat-card card-blue">
-        <div class="num">{{ total }}</div>
+    <div class="stat-card c-blue">
+        <div class="num" id="total-attacks">{{ total }}</div>
         <div class="label">Total Attacks</div>
     </div>
-    <div class="stat-card card-red">
+    <div class="stat-card c-red">
         <div class="num">{{ attackers | length }}</div>
         <div class="label">Unique Attackers</div>
     </div>
-    <div class="stat-card card-green">
+    <div class="stat-card c-green">
         <div class="num">{{ profiles | length }}</div>
         <div class="label">Profiles Generated</div>
     </div>
-    <div class="stat-card card-orange">
+    <div class="stat-card c-orange">
         <div class="num">4</div>
         <div class="label">Services Running</div>
     </div>
 </div>
 
 <div class="content">
+
+    <!-- LIVE ATTACK LOG -->
+    <div class="section-title">📡 LIVE ATTACK LOG</div>
+    <div id="live-log">
+        <div class="log-entry" style="color: #546E7A; text-align: center;">
+            Waiting for attacks...
+        </div>
+    </div>
 
     <!-- ATTACKER PROFILES -->
     <div class="section-title">🧠 ATTACKER PROFILES</div>
@@ -187,32 +338,32 @@
             </tr>
         </thead>
         <tbody>
-            {% for p in profiles %}
+        {% for p in profiles %}
             <tr>
                 <td><b>{{ p.ip }}</b></td>
                 <td>{{ p.category }}</td>
                 <td>
                     {% if p.level == 'LOW' %}
-                        <span class="badge badge-low">LOW</span>
+                        <span class="badge badge-low">Low</span>
                     {% elif p.level == 'MEDIUM' %}
-                        <span class="badge badge-medium">MEDIUM</span>
+                        <span class="badge badge-medium">Medium</span>
                     {% elif p.level == 'HIGH' %}
-                        <span class="badge badge-high">HIGH</span>
+                        <span class="badge badge-high">High</span>
                     {% else %}
-                        <span class="badge badge-critical">CRITICAL</span>
+                        <span class="badge badge-critical">Critical</span>
                     {% endif %}
                 </td>
-                <td><b style="color:#E67E22">{{ p.risk_score }} / 100</b></td>
+                <td><b style="color: #E67E22;">{{ p.risk_score }} / 100</b></td>
                 <td>{{ p.total_attacks }}</td>
                 <td>{{ p.services_hit | join(', ') }}</td>
                 <td>{{ p.speed }}</td>
             </tr>
-            {% endfor %}
+        {% endfor %}
         </tbody>
     </table>
     {% else %}
-    <p style="color:#546E7A; padding:20px; text-align:center;">
-        No attackers detected yet. Start honeypot.py and wait for connections.
+    <p style="color: #546E7A; padding: 20px; text-align: center;">
+        No attackers detected yet. Start honeypot and connect to ports.
     </p>
     {% endif %}
 
@@ -229,29 +380,92 @@
             </tr>
         </thead>
         <tbody>
-            {% for row in attacks[:20] %}
+        {% for row in attacks[:20] %}
             <tr>
-                <td style="color:#546E7A">{{ row[0] }}</td>
-                <td style="color:#90A4AE">{{ row[1] }}</td>
+                <td style="color: #546E7A;">{{ row[0] }}</td>
+                <td style="color: #90A4AE;">{{ row[1] }}</td>
                 <td>
-                    <span class="svc svc-{{ row[2] }}">{{ row[2] }}</span>
+                    <span class="svc {{ row[2] }}">{{ row[2] }}</span>
                 </td>
                 <td><b>{{ row[3] }}</b></td>
-                <td style="color:#B0BEC5">
+                <td style="color: #B0BEC5;">
                     {{ row[4][:60] if row[4] else 'connection attempt' }}
                 </td>
             </tr>
-            {% endfor %}
+        {% endfor %}
         </tbody>
     </table>
 
 </div>
 
 <div class="footer">
-    NEMESIS Honeypot System | B.E. CSE Cybersecurity Final Year Project
-    | Refresh this page to see latest attacks
+    🍯 NEMESIS Honeypot System | B.E. CSE Cybersecurity Final Year Project
+    <br>
+    Refresh page to see latest attacks | Real-time alerts via SocketIO
 </div>
+
+<!-- SOCKETIO JAVASCRIPT -->
+<script>
+    // Connect to SocketIO server
+    var socket = io();
+
+    // When server emits 'new_attack' event
+    socket.on('new_attack', function(data) {
+        // 1. Show red popup alert
+        showAlert(data);
+
+        // 2. Add entry to live log
+        addToLog(data);
+
+        // 3. Update total count
+        var countEl = document.getElementById('total-attacks');
+        if (countEl) {
+            countEl.textContent = parseInt(countEl.textContent) + 1;
+        }
+    });
+
+
+    function showAlert(data) {
+        var popup  = document.getElementById('alertPopup');
+        var detail = document.getElementById('alertDetail');
+
+        detail.innerHTML =
+            '<b>IP:</b> ' + data.ip + '<br>' +
+            '<b>Service:</b> ' + data.service + '<br>' +
+            '<b>Time:</b> ' + data.timestamp + '<br>' +
+            '<b>Data:</b> ' + (data.data || 'connection attempt');
+
+        popup.style.display = 'block';
+
+        // Auto-hide after 5 seconds
+        setTimeout(function() {
+            popup.style.display = 'none';
+        }, 5000);
+    }
+
+
+    function addToLog(data) {
+        var log = document.getElementById('live-log');
+
+        // Remove "waiting" message on first real entry
+        var firstChild = log.children[0];
+        if (firstChild && firstChild.style.color === 'rgb(84, 110, 122)') {
+            log.innerHTML = '';
+        }
+
+        var entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.innerHTML =
+            '<span class="log-time">' + data.timestamp + '</span>  ' +
+            '<span class="log-svc log-svc-' + data.service + '">' +
+                data.service + '</span>  ' +
+            '<span class="log-ip">' + data.ip + '</span>  ' +
+            (data.data || 'connection attempt');
+
+        // Add new entry at top
+        log.insertBefore(entry, log.firstChild);
+    }
+</script>
 
 </body>
 </html>
-
