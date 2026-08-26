@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>NEMESIS — SOC Dashboard</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+    background: #070b12; color: #d7e3f4; padding: 20px; min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 20% -10%, rgba(34,211,238,.08), transparent),
+      radial-gradient(ellipse 60% 40% at 90% 0%, rgba(168,85,247,.07), transparent);
+  }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
+  h1 { font-size: 20px; letter-spacing: 2px; color: #e2f3ff; }
+  h1 span { color: #22d3ee; }
+  .threat-badge { padding: 6px 14px; border-radius: 6px; font-weight: 700; letter-spacing: 1px; font-size: 13px; border: 1px solid transparent; }
+  .threat-badge.idle   { background: #0c1f14; color: #34d399; border-color: #14532d; }
+  .threat-badge.low    { background: #0c1f14; color: #34d399; border-color: #14532d; }
+  .threat-badge.medium { background: #1f1a0c; color: #fbbf24; border-color: #78350f; }
+  .threat-badge.high   { background: #1f0f0c; color: #fb923c; border-color: #7c2d12; }
+  .threat-badge.critical { background: #1f0c0c; color: #f87171; border-color: #7f1d1d; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .55; } }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .card { background: #0d1420; border: 1px solid #1c2940; border-radius: 10px; padding: 12px 14px; }
+  .card .lbl { color: #5e7a94; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .card .num { font-size: 26px; font-weight: 700; margin-top: 4px; color: #e2f3ff; }
+  .card .sub { font-size: 11px; color: #5e7a94; margin-top: 2px; }
+  .grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: #0d1420; border: 1px solid #1c2940; border-radius: 10px; padding: 14px; }
+  .panel h2 { font-size: 12px; color: #5e7a94; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; font-size: 13px; border-bottom: 1px solid #131f33; }
+  th { color: #5e7a94; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  td.ip { color: #a78bfa; }
+  .risk { display: inline-block; min-width: 42px; text-align: center; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+  .risk.low  { background: #0c2a1d; color: #34d399; }
+  .risk.mid  { background: #2a220c; color: #fbbf24; }
+  .risk.high { background: #2a140c; color: #fb923c; }
+  .risk.crit { background: #2a0c0c; color: #f87171; }
+  .pill { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 600; }
+  .pill.CuriousUser { background: #12263d; color: #60a5fa; }
+  .pill.ScriptKiddie { background: #1d1d3d; color: #818cf8; }
+  .pill.Bot { background: #2a1430; color: #c084fc; }
+  .pill.Targeted { background: #2a220c; color: #fbbf24; }
+  .pill.Insider { background: #2a0c0c; color: #f87171; }
+  .type { font-size: 12px; color: #7dd3fc; }
+  ul#events { list-style: none; height: 300px; overflow-y: auto; font-size: 12px; }
+  ul#events li { padding: 6px 0; border-bottom: 1px solid #131f33; color: #8ba3c2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .svc.ssh { color: #34d399; } .svc.http { color: #60a5fa; } .svc.ftp { color: #fbbf24; } .svc.telnet { color: #c084fc; }
+  .vizrow { display: flex; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+  .viz { flex: 1; min-width: 180px; text-align: center; }
+  .viz h3 { font-size: 11px; color: #5e7a94; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .bar { height: 8px; background: #131f33; border-radius: 4px; overflow: hidden; margin: 4px 0; }
+  .bar > div { height: 100%; border-radius: 4px; }
+  .svc-line { font-size: 11px; color: #8ba3c2; margin: 8px 0 2px; text-transform: uppercase; letter-spacing: 1px; }
+  .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #34d399; margin-right: 6px; box-shadow: 0 0 8px #34d399; }
+  .muted { color: #5e7a94; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>🛡️ NEMESIS <span>// SOC</span></h1>
+    <div>
+      <span class="muted" style="font-size:12px">uptime <span id="uptime">0s</span></span>
+      <span class="threat-badge idle" id="threat">THREAT: IDLE</span>
+    </div>
+  </header>
+
+  <div class="cards">
+    <div class="card"><div class="lbl">Total Attacks</div><div class="num" id="c-attacks">0</div></div>
+    <div class="card"><div class="lbl">Attackers</div><div class="num" id="c-attackers">0</div></div>
+    <div class="card"><div class="lbl">Maximum Risk</div><div class="num" id="c-risk">0</div><div class="sub">on a 0–100 scale</div></div>
+    <div class="card"><div class="lbl">Honeytoken Hits</div><div class="num" id="c-hits">0</div><div class="sub">decoy files touched</div></div>
+    <div class="card"><div class="lbl">Feed Status</div><div class="num" id="c-feed" style="font-size:15px">connecting…</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Attacker Profiles — ranked by risk</h2>
+      <table>
+        <thead><tr><th>IP</th><th>Category</th><th>Top Attack</th><th>Hits</th><th>Svcs</th><th>MITRE</th><th>Risk</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+
+    <div>
+      <div class="panel" style="margin-bottom:14px">
+        <div class="vizrow">
+          <div class="viz">
+            <h3>Threat Gauge</h3>
+            <svg id="gauge" width="170" height="100" viewBox="0 0 170 100"></svg>
+          </div>
+          <div class="viz">
+            <h3>Categories</h3>
+            <svg id="donut" width="150" height="120" viewBox="0 0 150 120"></svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Per-Service Hits</h2>
+        <div id="svcbars"></div>
+      </div>
+
+      <div class="panel" style="margin-top:14px">
+        <h2>Live Event Feed</h2>
+        <ul id="events"><li class="muted">Waiting for attacks…</li></ul>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const COLORS = {
+    "Curious User": "#60a5fa", "Script Kiddie": "#818cf8", "Bot": "#c084fc",
+    "Targeted": "#fbbf24", "Insider": "#f87171"
+  };
+
+  function gauge(risk) {
+    const svg = $("gauge");
+    const p = Math.min(1, risk / 100), r = 62, cx = 85, cy = 84;
+    const a0 = Math.PI, a1 = Math.PI * 2;
+    const arc = (start, end, color, width) => {
+      const x1 = cx + r * Math.cos(start), y1 = cy + r * Math.sin(start);
+      const x2 = cx + r * Math.cos(end),   y2 = cy + r * Math.sin(end);
+      const large = (end - start) > Math.PI ? 1 : 0;
+      svg.insertAdjacentHTML("beforeend",
+        `<path d="M${x1} ${y1} A${r} ${r} 0 ${large} 1 ${x2} ${y2}" fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/>`);
+    };
+    svg.innerHTML = "";
+    arc(a0, a1, "#131f33", 9);
+    if (p > 0.01) arc(a0, a0 + (a1 - a0) * p, p >= 0.8 ? "#f87171" : p >= 0.6 ? "#fb923c" : p >= 0.3 ? "#fbbf24" : "#34d399", 9);
+    svg.insertAdjacentHTML("beforeend",
+      `<text x="85" y="80" text-anchor="middle" fill="#e2f3ff" font-size="24" font-weight="700">${risk}</text>
+       <text x="85" y="96" text-anchor="middle" fill="#5e7a94" font-size="9">RISK / 100</text>`);
+  }
+
+  function donut(cats) {
+    const svg = $("donut");
+    svg.innerHTML = "";
+    const entries = Object.entries(cats).filter(([, v]) => v > 0);
+    const total = entries.reduce((s, [, v]) => s + v, 0);
+    if (!total) {
+      svg.insertAdjacentHTML("beforeend", `<text x="75" y="58" text-anchor="middle" fill="#5e7a94" font-size="11">no data</text>`);
+      return;
+    }
+    const r = 38, cx = 75, cy = 52, c = 2 * Math.PI * r;
+    let off = 0;
+    entries.forEach(([name, v]) => {
+      const frac = v / total, col = COLORS[name] || "#64748b";
+      const dash = frac * c;
+      svg.insertAdjacentHTML("beforeend",
+        `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${col}" stroke-width="16"
+         stroke-dasharray="${dash} ${c - dash}" stroke-dashoffset="${-off}" transform="rotate(-90 ${cx} ${cy})"/>`);
+      off += dash;
+    });
+    svg.insertAdjacentHTML("beforeend",
+      `<text x="75" y="50" text-anchor="middle" fill="#e2f3ff" font-size="18" font-weight="700">${total}</text>
+       <text x="75" y="64" text-anchor="middle" fill="#5e7a94" font-size="8">ATTACKERS</text>
+       <g font-size="9">${entries.map(([n, v], i) =>
+         `<text x="2" y="${106 + i * 11}" fill="${COLORS[n] || "#64748b"}">● ${n} (${v})</text>`).join("")}</g>`);
+  }
+
+  function bars(services) {
+    const max = Math.max(1, ...Object.values(services));
+    const col = { ssh: "#34d399", http: "#60a5fa", ftp: "#fbbf24", telnet: "#c084fc" };
+    $("svcbars").innerHTML = Object.entries(services).map(([svc, v]) =>
+      `<div class="svc-line">${svc.toUpperCase()} <span class="muted">${v}</span></div>
+       <div class="bar"><div style="width:${Math.round(v / max * 100)}%;background:${col[svc]}"></div></div>`).join("");
+  }
+
+  function render(d) {
+    $("c-attacks").textContent = d.attacks;
+    $("c-attackers").textContent = d.attackers;
+    $("c-risk").textContent = d.top_risk;
+    $("c-hits").textContent = d.honeytoken_hits || 0;
+    $("uptime").textContent = `${Math.floor(d.uptime / 60)}m ${d.uptime % 60}s`;
+    const t = $("threat");
+    t.textContent = "THREAT: " + d.threat;
+    t.className = "threat-badge " + d.threat.toLowerCase();
+    gauge(d.top_risk);
+    donut(d.categories || {});
+    bars(d.services || {});
+    $("rows").innerHTML = (d.attackers_list || []).map(p => {
+      const cls = p.risk >= 80 ? "crit" : p.risk >= 60 ? "high" : p.risk >= 30 ? "mid" : "low";
+      return `<tr><td class="ip">${p.ip}</td>
+        <td><span class="pill ${p.category.replace(/ /g, '')}">${p.category}</span></td>
+        <td class="type">${p.top_type || "—"}</td>
+        <td>${p.total}</td><td>${p.diversity}</td><td class="type">${(p.mitre||[]).join(" · ")}</td>
+        <td><span class="risk ${cls}">${p.risk}</span></td></tr>`;
+    }).join("") || `<tr><td colspan="7" class="muted">No attacks yet — run: python3 attack.py</td></tr>`;
+    $("events").innerHTML = (d.recent || []).map(e =>
+      `<li><span class="svc ${e.service}">[${e.service.toUpperCase()}]</span> ${e.ip} — ${e.type} <span class="muted">· ${e.time}</span></li>`).join("") || '<li class="muted">Waiting…</li>';
+  }
+
+  let last = null;
+  setInterval(async () => {
+    try {
+      const r = await fetch("/api");
+      const d = await r.json();
+      if (JSON.stringify(last) !== JSON.stringify(d)) { last = d; render(d); }
+      $("c-feed").innerHTML = '<span class="live-dot"></span>LIVE';
+    } catch (e) { $("c-feed").textContent = "offline"; }
+  }, 2000);
+  render({attacks: 0, attackers: 0, top_risk: 0, threat: "IDLE", categories: {}, services: {}, attackers_list: [], recent: [], uptime: 0, honeytoken_hits: 0});
+</script>
+</body>
+</html>
