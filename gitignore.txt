@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.pyo
+nemesis.db
+canary/
+.DS_Store
