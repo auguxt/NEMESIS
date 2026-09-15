@@ -4,27 +4,57 @@
 SSH 2222 | HTTP 8080 | FTP 2121 | Telnet 2323
 Attack with:  nc localhost <port>
 """
-import socket, threading, time
+import socket
+import threading
+import time
+from itertools import count
+
 import canary
 from db import dblog
 
 PORTS = {"ssh": 2222, "http": 8080, "ftp": 2121, "telnet": 2323}
 BANNERS = {
-    "ssh":    b"SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6\r\n",
-    "http":   b"HTTP/1.1 200 OK\r\nServer: nginx/1.18.0\r\nContent-Type: text/html\r\n\r\n<html><body><h1>Welcome</h1><form action='/login' method='POST'><input name='user'><input name='pass' type='password'><button>Login</button></form></body></html>",
-    "ftp":    b"220 (vsFTPd 3.0.5)\r\n",
+    "ssh": b"SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6\r\n",
+    "ftp": b"220 (vsFTPd 3.0.5)\r\n",
     "telnet": b"\xff\xfb\x01\xff\xfb\x03\r\nUbuntu 22.04 LTS login: ",
 }
+HTTP_LOGIN_PAGE = (
+    b"<html><body><h1>Welcome</h1>"
+    b"<form action='/login' method='POST'>"
+    b"<input name='user'><input name='pass' type='password'><button>Login</button>"
+    b"</form></body></html>"
+)
 
 sessions = {}
+session_ids = count(1)
 lock = threading.Lock()
+
+
+def http_response(status_line, body=b"", ctype=b"text/plain"):
+    return (
+        status_line
+        + b"\r\nServer: nginx/1.18.0"
+        + b"\r\nContent-Type: " + ctype
+        + b"\r\nContent-Length: " + str(len(body)).encode()
+        + b"\r\nConnection: close\r\n\r\n"
+        + body
+    )
+
 
 def new_session(service, ip, sport):
     with lock:
-        sid = max(sessions.keys(), default=0) + 1
-        sessions[sid] = {"service": service, "src_ip": ip, "src_port": sport,
-                         "session_id": sid, "start": time.time(), "commands": [], "credentials": []}
+        sid = next(session_ids)
+        sessions[sid] = {
+            "service": service,
+            "src_ip": ip,
+            "src_port": sport,
+            "session_id": sid,
+            "start": time.time(),
+            "commands": [],
+            "credentials": [],
+        }
         return sid
+
 
 def record_command(sid, text):
     with lock:
@@ -33,23 +63,27 @@ def record_command(sid, text):
         if len(s["commands"]) > 100:
             s["commands"] = s["commands"][-100:]
 
+
 def process_line(service, sid, line, conn):
     """Handle one decoded, stripped line from an attacker."""
     if service == "ssh":
         record_command(sid, line)
     elif service == "http":
         parts = line.split()
-        path = parts[1] if len(parts) > 1 else "/"
-        record_command(sid, line)          # request line e.g. GET /wp-login.php
+        record_command(sid, line)  # request line e.g. GET /wp-login.php HTTP/1.1
+        if len(parts) < 2:
+            conn.sendall(http_response(b"HTTP/1.1 400 Bad Request"))
+            return False
+        method, path = parts[0].upper(), parts[1]
         decoy = canary.match_http(path, sessions[sid]["src_ip"])
         if decoy:
             body, ctype = decoy
-            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: " + ctype +
-                         b"\r\nContent-Length: " + str(len(body)).encode() +
-                         b"\r\n\r\n" + body)
+            conn.sendall(http_response(b"HTTP/1.1 200 OK", body, ctype))
+        elif method in {"GET", "POST"} and path in {"/", "/login", "/index.html"}:
+            conn.sendall(http_response(b"HTTP/1.1 200 OK", HTTP_LOGIN_PAGE, b"text/html"))
         else:
-            conn.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
-        return False                        # close after first request
+            conn.sendall(http_response(b"HTTP/1.1 404 Not Found"))
+        return False
     elif service == "ftp":
         up = line.upper()
         record_command(sid, line)
@@ -58,9 +92,10 @@ def process_line(service, sid, line, conn):
             sessions[sid]["credentials"].append((parts[1] if len(parts) > 1 else "", None))
             conn.sendall(b"331 Please specify the password.\r\n")
         elif up.startswith("PASS"):
+            parts = line.split(maxsplit=1)
             if sessions[sid]["credentials"]:
                 u, _ = sessions[sid]["credentials"][-1]
-                p = line.split()[1] if len(line.split()) > 1 else ""
+                p = parts[1] if len(parts) > 1 else ""
                 sessions[sid]["credentials"][-1] = (u, p)
             conn.sendall(b"530 Login incorrect.\r\n")
         elif up.startswith("RETR"):
@@ -83,12 +118,15 @@ def process_line(service, sid, line, conn):
         conn.sendall(b"Password: ")
     return True
 
+
 def handle(service, conn, addr):
     ip, sport = addr
     sid = new_session(service, ip, sport)
     try:
         conn.settimeout(15)
-        conn.sendall(BANNERS[service])
+        banner = BANNERS.get(service)
+        if banner:
+            conn.sendall(banner)
         buf = b""
         while True:
             data = conn.recv(512)
@@ -98,18 +136,22 @@ def handle(service, conn, addr):
             while b"\n" in buf:
                 raw, buf = buf.split(b"\n", 1)
                 line = raw.rstrip(b"\r").decode("utf-8", errors="replace").strip()
-                if line:
-                    if not process_line(service, sid, line, conn):
-                        raise ConnectionError("close")
+                if line and not process_line(service, sid, line, conn):
+                    raise ConnectionError("close")
     except (socket.timeout, ConnectionError, OSError):
         pass
     finally:
-        sessions[sid]["end"] = time.time()
-        dblog(sessions[sid])
+        with lock:
+            session = sessions.pop(sid, None)
+            if session is not None:
+                session["end"] = time.time()
+        if session is not None:
+            dblog(session)
         try:
             conn.close()
         except OSError:
             pass
+
 
 def serve(service, port):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -120,6 +162,7 @@ def serve(service, port):
     while True:
         conn, addr = srv.accept()
         threading.Thread(target=handle, args=(service, conn, addr), daemon=True).start()
+
 
 if __name__ == "__main__":
     print("=" * 50)
