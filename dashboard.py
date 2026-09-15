@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """NEMESIS dashboard server - pure stdlib http.server, JSON API + live UI."""
-import json, time
+import json
+import os
+import time
 from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
-from db import fetch_raw, fetch_honeytoken_count
-from profiler import score_all, detect_attack_type
 
+from db import fetch_honeytoken_count, fetch_raw
+from profiler import detect_attack_type, score_all
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PORT = 5000
-STATE_FILE = "dashboard.html"
+STATE_FILE = os.path.join(BASE_DIR, "dashboard.html")
 START = time.time()
+
 
 def threat_level(risk):
     if risk >= 80:
@@ -21,6 +26,7 @@ def threat_level(risk):
     if risk > 0:
         return "LOW"
     return "IDLE"
+
 
 def render():
     rows = fetch_raw()
@@ -35,11 +41,15 @@ def render():
     recent = []
     for r in rows[-14:]:
         cmds = json.loads(r["commands"]) if r["commands"] else []
-        recent.append({
-            "ip": r["src_ip"], "service": r["service"],
-            "type": detect_attack_type(r["service"], cmds),
-            "cmd": cmds[-1] if cmds else "connected",
-            "time": time.strftime("%H:%M:%S", time.localtime(r["timestamp"]))})
+        recent.append(
+            {
+                "ip": r["src_ip"],
+                "service": r["service"],
+                "type": detect_attack_type(r["service"], cmds),
+                "cmd": cmds[-1] if cmds else "connected",
+                "time": time.strftime("%H:%M:%S", time.localtime(r["timestamp"])),
+            }
+        )
     recent.reverse()
     return {
         "attacks": len(rows),
@@ -54,10 +64,12 @@ def render():
         "honeytoken_hits": fetch_honeytoken_count(),
     }
 
+
 def handler_factory():
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
+
         def do_GET(self):
             path = urlparse(self.path).path
             if path == "/":
@@ -74,13 +86,16 @@ def handler_factory():
             else:
                 self.send_response(404)
                 self.end_headers()
+
     return Handler
+
 
 def main():
     print("=" * 52)
     print("  NEMESIS Dashboard — http://localhost:5000")
     print("=" * 52)
     ThreadingHTTPServer(("0.0.0.0", PORT), handler_factory()).serve_forever()
+
 
 if __name__ == "__main__":
     main()
