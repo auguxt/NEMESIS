@@ -6,13 +6,18 @@ the Linux loopback range), so the profiler sees MANY different "attackers"
 and every category lights up on the dashboard.
 
 Usage:
-  python3 attack.py              # full assault (11 attack classes + insider sim)
-  python3 attack.py --no-insider # skip the simulated insider/honeytoken hit
+  python3 attack.py              # full assault (all attack classes + insider sim)
+  python3 attack.py --no-insider # skip simulated insider activity and honeytoken hits
 """
-import socket, time, threading, argparse
+import argparse
+import socket
+import threading
+import time
+
 from db import init_db, log_honeytoken_hit
 
 PORTS = {"ssh": 2222, "http": 8080, "ftp": 2121, "telnet": 2323}
+
 
 def send(port, data=b"", src="127.0.0.1", wait=0.3, banner_wait=0.3, linger=0.0):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -35,13 +40,16 @@ def send(port, data=b"", src="127.0.0.1", wait=0.3, banner_wait=0.3, linger=0.0)
     finally:
         s.close()
 
+
 def run(name, fn):
     def w():
         print(f"    -> {name}")
         fn()
+
     t = threading.Thread(target=w, daemon=True)
     t.start()
     return t
+
 
 def port_scan():
     ip = "127.0.0.2"
@@ -49,19 +57,29 @@ def port_scan():
         send(port, b"", src=ip, wait=0.07)
         send(port, b"", src=ip, wait=0.07)
 
+
 def ssh_bruteforce():
     ip = "127.0.0.3"
-    for u, p in [("root", "123456"), ("root", "password"), ("admin", "admin"),
-                 ("admin", "123456"), ("test", "test")]:
+    for u, p in [("root", "123456"), ("root", "password"), ("admin", "admin"), ("admin", "123456"), ("test", "test")]:
         send(2222, f"{u}\r\n{p}\r\n".encode(), src=ip, wait=0.12)
+
 
 def ftp_bruteforce():
     ip = "127.0.0.4"
-    for u, p in [("admin", "123456"), ("admin", "password"), ("root", "toor"),
-                 ("test", "test"), ("ftp", "ftp"), ("admin", "admin"),
-                 ("guest", "guest"), ("root", "123456"), ("admin", "root"),
-                 ("user", "pass")]:
+    for u, p in [
+        ("admin", "123456"),
+        ("admin", "password"),
+        ("root", "toor"),
+        ("test", "test"),
+        ("ftp", "ftp"),
+        ("admin", "admin"),
+        ("guest", "guest"),
+        ("root", "123456"),
+        ("admin", "root"),
+        ("user", "pass"),
+    ]:
         send(2121, f"USER {u}\r\nPASS {p}\r\nQUIT\r\n".encode(), src=ip, wait=0.09)
+
 
 def web_exploit():
     ip = "127.0.0.5"
@@ -79,15 +97,18 @@ def web_exploit():
     for req in reqs:
         send(8080, req, src=ip, wait=0.1)
 
+
 def telnet_banner():
     ip = "127.0.0.7"
     for line in (b"root\r\n", b"admin\r\n", b"help\r\n"):
         send(2323, line, src=ip, wait=0.2)
 
+
 def slowloris():
     ip = "127.0.0.8"
     for _ in range(3):
         send(8080, b"GET / HTTP/1.1\r\nHost: victim\r\n", src=ip, wait=0.1, linger=1.1)
+
 
 def connect_flood():
     ip = "127.0.0.9"
@@ -95,10 +116,12 @@ def connect_flood():
     for i in range(12):
         send(ports[i % 4], b"", src=ip, wait=0.04)
 
+
 def credential_stuffing():
     ip = "127.0.0.10"
     for u in ("admin", "support", "it", "student", "faculty", "library"):
         send(2222, f"{u}\r\nWelcome@2024\r\n".encode(), src=ip, wait=0.1)
+
 
 def curious_user():
     ip = "127.0.0.11"
@@ -111,10 +134,11 @@ def curious_user():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(6)
     s.connect(("127.0.0.1", 2323))
-    time.sleep(2.0)                       # hesitant - just reads the banner
+    time.sleep(2.0)  # hesitant - just reads the banner
     s.sendall(b"help\r\n")
     time.sleep(0.5)
     s.close()
+
 
 def insider_decoy():
     """Insider: an employee machine fetches 'config backups' - classic insider behaviour."""
@@ -127,7 +151,7 @@ def insider_decoy():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--no-insider", action="store_true", help="skip the simulated insider (honeytoken) hit")
+    ap.add_argument("--no-insider", action="store_true", help="skip all simulated insider activity")
     args = ap.parse_args()
     init_db()
     print("=" * 56)
@@ -143,8 +167,9 @@ def main():
         run("Connect flood (12 sessions)          [127.0.0.9]", connect_flood),
         run("Credential stuffing                  [127.0.0.10]", credential_stuffing),
         run("Curious user single poke             [127.0.0.11]", curious_user),
-        run("Insider: decoy config retrieval      [127.0.0.6]", insider_decoy),
     ]
+    if not args.no_insider:
+        threads.append(run("Insider: decoy config retrieval      [127.0.0.6]", insider_decoy))
     for t in threads:
         t.join()
     if not args.no_insider:
@@ -153,6 +178,7 @@ def main():
         log_honeytoken_hit("10.0.0.44", "decoy college-db password")
     print("=" * 56)
     print("[*] Done. Open http://localhost:5000 to watch every category light up.")
+
 
 if __name__ == "__main__":
     main()
